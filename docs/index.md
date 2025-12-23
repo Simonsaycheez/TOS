@@ -7,7 +7,7 @@ hero:
   actions:
     - theme: brand
       text: Get Started
-      link: /definition
+      link: /definition/overview
     - theme: alt
       text: View on GitHub
       link: https://github.com/vuejs/vitepress

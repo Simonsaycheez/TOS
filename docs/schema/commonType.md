@@ -1,268 +1,227 @@
 # Common Type Schema Reference
+## **Purpose of Common Types**
 
-This section defines the **common identifiers, headers, and envelope structures** reused across all Orchestration Application Protocol (OAP) messages, regardless of their functional category (governance, provenance, SIA, etc.).
+  
 
-These types are **transport- and category-agnostic** and SHOULD be used consistently across all request and response schemas.
+This section defines the **core internal data structures** used across all OAP envelopes.
 
-## **3.1 Type Conventions**
+These common fields exist inside every request and response message body, regardless of category (execution, lifecycle, provenance, policy, SIA, etc.).
 
-In this document, types are expressed using a TypeScript-like notation for readability:
+  
 
-- string, number, boolean, object, array`<T>`
-- T? denotes an optional field
-- Readonly`<T>` indicates values SHOULD NOT be modified after creation
-- Comments starting with // describe semantics rather than implementation details
+This chapter intentionally excludes all HTTP header definitions and focuses solely on the content **inside the JSON envelope**.
 
-## **3.2 Identifier Types**
+  
 
-### **3.2.1** **OrchId**
+## **1. Base Envelope Structure Model**
+
+  
+
+All envelopes share the same foundational shape:
+```
+{
+  "jsonrpc": "2.0",
+  "id": "string",
+  "envelope_type": "string",
+  "_meta": { ... },
+  ...
+}
+```
+The fields defined below represent **guaranteed cross-category fields**.
+
+## **2. Required Common Fields**
+
+### **2.1 jsonrpc**
 
 ```
-type OrchId = string;
+jsonrpc: "2.0"
 ```
+Identifies the JSON-RPC version used to frame the envelope.
 
-#### **Definition**
-
-A unique identifier for a **single orchestrated exchange** (one request–response event).
-
-#### **Usage**
-
-- Correlates a **JSON-RPC request** with its corresponding response (maps to JSON-RPC id)
-- Used as the primary key for event-level provenance entries
-- May be transported both:
-  - As an HTTP header: Orch-Id
-  - Inside the JSON body: id (JSON-RPC field)
-
----
-
-### **3.2.2** **OrchSessionId**
-
+### **2.2 id**
 ```
-type OrchSessionId = string;
+id: string
 ```
+A unique identifier that maps one request to one response.
 
-#### **Definition**
+This value is always present for both:
 
-A persistent identifier for an **entire orchestration session** that may span multiple events / envelopes.
+- request envelopes
+    
+- response envelopes
 
-#### **Usage**
-
-- Groups multiple OrchId events into a single **session context**
-- Enables long-running conversations and end-to-end governance analysis
-- Transported as:
-  - HTTP header: Orch-Session-Id
-  - Optionally echoed in \_meta.session_id
-
----
-
-### **3.2.3** **OrchModuleId**
-
+### **2.3 envelope_type**
 ```
-type OrchModuleId = string;
+envelope_type: string
 ```
+Declares the semantic identity of the envelope.
 
-#### **Definition**
+  
 
-Logical identifier of the module participating in the orchestration fabric.
+Examples:
 
-#### **Usage**
+- "exec.invoke"
+    
+- "policy.evaluate"
+    
+- "sia.infer"
+    
 
-- Transported as HTTP header: Orch-Module-Id
-- Used for:
-  - capability registry
-  - policy scoping
-  - governance / audit attribution
+  
 
----
+This field determines how the envelope payload is interpreted.
+## **3. Common Request Body Format**
 
-### **3.2.4** **OrchCaller**
+  
 
+All request envelopes extend the following structure:
 ```
-type OrchCaller = string;
-```
-
-#### **Definition**
-
-The authenticated caller identity (human user, service principal, or agent).
-
-#### **Usage**
-
-- Transported as HTTP header: Orch-Caller
-- Optionally echoed in \_meta.caller
-- Used for human governance, access control, and audit.
-
----
-
-## **3.3 Common HTTP Headers**
-
-The following headers are **common to all OAP HTTP requests and responses**, unless explicitly stated otherwise.
-
-```
-Orch-Id: string                // event-level identifier
-Orch-Session-Id: string        // session-level identifier
-Orch-Caller: string            // logical caller identity
-Orch-Module-Id: string         // logical module identity
-Orch-Prev-Event-Hash: string   // (provenance; see provenance section)
-```
-
-For responses, additional governance / provenance headers (e.g. Orch-Policy-Binding, Orch-Event-Hash, Orch-Ledger-Anchor) are defined in their respective sections.
-
-In this **Common Types** section, they are treated as opaque strings.
-
----
-
-## **3.4 Base JSON-RPC Envelope Types**
-
-All OAP messages use **JSON-RPC 2.0** as the base envelope format.
-
-### **3.4.1**  **OrchEnvelopeBase**
-
-```
-interface OrchEnvelopeBase {
-  jsonrpc: "2.0";
-  id: OrchId;                      // event ID (mirrors Orch-Id)
-  envelope_type: string;           // e.g. "oap.policy.evaluate"
-  _meta?: OrchMeta;                // shared metadata
+{
+  "jsonrpc": "2.0",
+  "id": string,
+  "envelope_type": string,
+  "params": object,
+  "_meta"?: object
 }
 ```
 
-#### **Notes**
+Where:
 
-- envelope_type determines the semantic contract of params / result / error.
-- \_meta carries cross-cutting metadata used across categories.
+- params MUST exist, even if empty
+    
+- _meta is optional
+    
 
----
+No business definition exists inside this chapter — categories define their own params.
 
-### **3.4.2 Request Envelope**
+## **4. Common Success Response Format**
 
+  
+
+All successful responses share this structure:
 ```
-interface OrchRequestEnvelope<TParams = unknown> extends OrchEnvelopeBase {
-  // For a request, `params` SHOULD be present even if empty.
-  params: TParams;
-  // For purely control-plane pings, params MAY be `{}`.
+{
+  "jsonrpc": "2.0",
+  "id": string,
+  "envelope_type": string,
+  "result": object,
+  "_meta"?: object
 }
 ```
 
-#### **Usage**
+Where:
 
-All concrete request types (policy, exec, SIA, provenance, etc.) MUST extend this base structure and define their own params schema.
+- result MUST exist if the envelope is a success
+    
+- _meta is optional
+## **5. Common Error Response Format**
 
----
+  
 
-### **3.4.3 Success Response Envelope**
-
+Error envelopes follow the same structural base:
 ```
-interface OrchSuccessEnvelope<TResult = unknown> extends OrchEnvelopeBase {
-  result: TResult;
-  // When `result` is present, `error` MUST NOT be present.
+{
+  "jsonrpc": "2.0",
+  "id": string,
+  "envelope_type": string,
+  "error": {
+    "code": string,
+    "message": string
+  },
+  "_meta"?: object
 }
 ```
+Where:
 
-#### **Usage**
+- error MUST exist
+    
+- result MUST NOT appear
+## **6. Common Error Object**
 
-- Used for HTTP 2xx responses where the operation is considered successful at the envelope level.
-- Governance may still indicate partial allow / constraints via headers or result contents.
+  
 
----
-
-### **3.4.4 Error Response Envelope**
+The error block inside an error envelope has a fixed, category-agnostic shape:
+```
+{
+  "code": "string",
+  "message": "string",
+  "details"?: object
+}
 
 ```
-interface OrchErrorEnvelope<TError = OrchError> extends OrchEnvelopeBase {
-  error: TError;
-  // When `error` is present, `result` MUST NOT be present.
+Purpose:
+
+- allows all categories to report failure consistently
+    
+- avoids category-specific interpretation at the base protocol layer
+## **7. Common Metadata Object (_meta)**
+
+  
+
+The _meta object carries cross-cutting optional metadata:
+
+```
+{
+  "timestamp"?: string,
+  "labels"?: { [key: string]: string },
+  "client_version"?: string,
+  "locale"?: string
 }
 ```
+Rules:
 
-#### **Usage**
+- _meta is OPTIONAL
+    
+- _meta NEVER changes envelope meaning
+    
+- _meta is available in both requests and responses
 
-- Used with HTTP error codes (e.g. 403, 422, 500) or policy-denied cases.
-- error structure is a **common type** (see below), extended by governance- or domain-specific fields where needed.
+## **8. Envelope Field Rules**
 
----
+  
 
-## **3.5 Common Error Type**
+### **8.1 Exclusivity Rule**
 
-### **3.5.1**  **OrchError**
+  
 
-```
-interface OrchError {
-  code: string;              // machine-readable error code (e.g. "POLICY_DENIED", "INVALID_PARAMS")
-  message: string;           // short human-readable summary
-  details?: object;          // arbitrary structured data for debugging / UI
-  retryable?: boolean;       // hint whether retry is meaningful
-  cause?: string;            // optional root-cause category or upstream reference
-}
-```
+A response envelope MUST contain either:
 
-#### **Notes**
+- result (success), or
+    
+- error (failure)
+    
 
-- code SHOULD be stable and versioned at protocol level.
-- details MAY include governance or provenance identifiers but SHOULD NOT be relied on for policy logic (those are defined in policy / provenance sections).
+  
+### **8.2 Structural Uniformity Rule**
 
----
+  
 
-## **3.6 Common Metadata Type**
+Every envelope must contain:
 
-### **3.6.1** **OrchMeta**
+- jsonrpc
+    
+- id
+    
+- envelope_type
+    
 
-```
-interface OrchMeta {
-  timestamp?: string;              // ISO 8601 UTC time when the envelope was created
-  session_id?: OrchSessionId;      // optional echo of Orch-Session-Id
-  trace_id?: OrchTraceId;          // optional echo of Orch-Trace-Id
-  locale?: string;                 // e.g. "en-US", "zh-CN"
-  channel?: string;                // e.g. "web-ui", "cli", "batch-job"
-  client_version?: string;         // e.g. "orch-gateway/1.0.3"
-  labels?: Record<string, string>; // arbitrary key–value tags for routing/analytics
-  correlation_ids?: string[];      // other system-specific correlation IDs
-  // future extensions MAY add governance/provenance hints,
-  // but category-specific semantics belong in dedicated sections.
-}
-```
 
-#### **Usage**
+## **9. Summary**
 
-- \_meta is optional but RECOMMENDED for:
-  - observability
-  - debugging
-  - analytics and routing
-- When timestamp is absent, the server MAY derive it from server receive-time.
+  
 
----
+The Common Envelope Type Schema:
 
-## **3.7 Common Pagination Types (Optional but Reusable)**
+- establishes the universal internal JSON structure
+    
+- enables cross-category compatibility
+    
+- guarantees request/response uniformity
+    
+- provides a extensible metadata surface
+    
+- defines error response behavior consistently
+    
 
-For envelopes that return lists (e.g. search, query, history), the following pagination types SHOULD be reused.
+Every envelope in the protocol MUST be built by extending these shared field definitions.
 
-### **3.7.1** **OrchPageRequest**
-
-```
-  interface OrchPageRequest {
-  cursor?: string;        // opaque cursor token for the next page
-  limit?: number;         // max number of items to return
-}
-```
-
-### **3.7.2**  **OrchPageResponse`<TItem>`**
-
-```
-interface OrchPageResponse<TItem> {
-  items: TItem[];
-  next_cursor?: string;   // present if more items can be fetched
-  total_estimate?: number;// optional approximate total count
-}
-```
-
----
-
-## **3.8 Summary**
-
-The **Common Types** defined in this section provide:
-
-- A **uniform structure** for all envelopes (OrchEnvelopeBase, OrchRequestEnvelope, OrchSuccessEnvelope, OrchErrorEnvelope)
-- A consistent set of **identifiers** (OrchId, OrchSessionId, OrchTraceId, OrchModuleId, OrchCaller)
-- Reusable **metadata and error** types (OrchMeta, OrchError)
-- Shared **pagination** primitives (OrchPageRequest, OrchPageResponse)
-
-All category-specific schemas (governance, provenance, SIA, lifecycle, etc.) MUST be defined **by extending these common types**, rather than re-inventing identifiers or envelope structures.

@@ -1,113 +1,87 @@
 # Governance Type Schema Reference
 
-This section defines the shared JSON structures and HTTP header semantics for **policy evaluation, governance decisions, constraint enforcement, HITL integration, authorization outcomes, and risk metadata**.
+This section defines governance-related structures for **policy evaluation and authorization envelopes**, along with the **optional HTTP headers** used to expose governance outcomes at response time.
 
-These types extend the Common Types without redefining envelope structure or transport behavior.
+  
 
-Governance types apply to all envelopes that require policy involvement, including:
+Governance schemas apply only to envelopes that explicitly require policy evaluation.
 
-- policy.evaluate
-- policy.explain
-- exec.invoke (post-policy)
-- hitl.\*
-- lifecycle.\* (approval stage)
-- Any request requiring safety, ethics, authorization, or risk gating
+They do **not** modify the common envelope format, nor enforce execution semantics.
 
----
+# **0. Optional Governance HTTP Headers**
 
-## **4.1 Governance HTTP Header Types**
+  
 
-The following headers MAY appear in responses of any governance-controlled operation. They MUST NOT be modified inside the JSON envelope body.
+The following headers MAY appear on responses from envelopes that undergo governance evaluation.
 
-### **4.1.1 Orch-Policy-Binding**
+These headers are optional and MUST NOT be assumed in the base protocol.
+|**Header**|**Purpose**|
+|---|---|
+|Orch-Policy-Binding|Identifier for the policy set used to evaluate the request|
+|Orch-Decision|High-level decision result (ALLOW / PARTIAL_ALLOW / DENY / HITL_REQUIRED / ESCALATION_REQUIRED)|
+|Orch-Risk-Level|Optional textual indication of evaluated residual risk|
+|Orch-HITL-Required|Indicates whether human approval is needed before execution|
 
+
+These headers:
+
+- apply to policy-related responses only
+    
+- MUST NOT affect envelope schema field meanings
+    
+- may be omitted if governance is disabled
+
+# **1 Governance Envelope Structure**
+
+  
+
+All governance envelopes follow the shared envelope definition from Common Types:
 ```
-
-Orch-Policy-Binding: string
+{
+  "jsonrpc": "2.0",
+  "id": "...",
+  "envelope_type": "policy.*",
+  "params": {},
+  "_meta": {}
+}
 ```
-
-Represents a versioned policy bundle identifier applied to the request.
-
-Stable reference for replay, reproduction, and forensic analysis.
-
----
-
-### **4.1.2 Orch-Decision**
-
+Response envelopes follow the same common response form:
 ```
-Orch-Decision: "ALLOW" |
-                "PARTIAL_ALLOW" |
-                "DENY" |
-                "HITL_REQUIRED" |
-                "ESCALATION_REQUIRED"
+{
+  "jsonrpc": "2.0",
+  "id": "...",
+  "envelope_type": "policy.*",
+  "result"?: {},
+  "error"?: {}
+}
 ```
+# **2 Policy Evaluation Envelope**
 
-High-level outcome of the policy evaluation.
+  
 
-#### Semantics:
+### **Envelope Type**
 
-| **Value**           | **Meaning**                              |
-| ------------------- | ---------------------------------------- |
-| ALLOW               | Operation permitted without restrictions |
-| PARTIAL_ALLOW       | Operation allowed with constraints       |
-| DENY                | Operation blocked                        |
-| HITL_REQUIRED       | Requires human approval step             |
-| ESCALATION_REQUIRED | Must escalate to higher authority        |
+  
 
----
+policy.evaluate
 
-### **4.1.3 Orch-Risk-Level**
+  
 
-```
-Orch-Risk-Level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-```
+Used to request a governance decision over a proposed operation.
 
-Residual impact classification after applying governance evaluation.
+  
 
----
-
-### **4.1.4 Orch-HITL-Required (optional)**
-
-```
-Orch-HITL-Required: boolean
-```
-
-Indicates whether human-in-the-loop must occur before final execution.
-
----
-
-# **4.2 Governance Envelope Payload Structures**
-
-Governance envelopes extend the base envelope structure via params and result.
-
-The following schema definitions reference **Common Types** and do not redefine id, jsonrpc, or \_meta.
-
----
-
-## **4.2.1 Policy Evaluation Request**
-
-Envelope Type: policy.evaluate
-
+### **Request Params**
 ```
 interface PolicyEvaluateParams {
-  action: string;
-  // semantic name of requested operation (e.g., "exec.invoke.rag.search")
-
-  context: PolicyContext;
-  // environment and subject metadata
-
-  payload?: object;
-  // optional raw data used for decision, not executed
-
-  dry_run?: boolean;
-  // if true, only evaluate policy without enforcement
+  action: string;            // semantic name, e.g. "exec.invoke"
+  context: PolicyContext;    // attributes describing caller and session
+  payload?: object;          // optional domain data for evaluation
+  dry_run?: boolean;         // evaluate without enforcement
 }
 ```
 
----
-
-## **4.2.2 Policy Evaluation Response**
-
+### **Response Result**
 ```
 interface PolicyEvaluateResult {
   decision: PolicyDecision;
@@ -117,13 +91,46 @@ interface PolicyEvaluateResult {
   policy_binding_id: string;
 }
 ```
+# **3 Policy Explanation Envelope**
 
----
+  
 
-# **4.3 Core Governance Model Types**
+### **Envelope Type**
 
-## **4.3.1 PolicyDecision**
+  
 
+policy.explain
+
+  
+
+Used to retrieve explanation associated with a previous policy evaluation.
+
+  
+
+### **Request Params**
+```
+interface PolicyExplainParams {
+  policy_binding_id: string;
+}
+```
+
+### **Response Result**
+```
+interface PolicyExplainResult {
+  explanation: string;
+  rules_fired?: string[];
+  constraints?: PolicyConstraint[];
+  evidence?: object;
+}
+```
+# **4 Policy Model Types**
+
+  
+
+These types are reused across governance envelopes.
+
+They do not modify base envelope structure.
+## **4.1 PolicyDecision**
 ```
 type PolicyDecision =
   "ALLOW" |
@@ -132,45 +139,25 @@ type PolicyDecision =
   "HITL_REQUIRED" |
   "ESCALATE";
 ```
-
----
-
-## **4.3.2 RiskLevel**
-
+  ## **4.2 RiskLevel**
 ```
-type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  type RiskLevel =
+  "LOW" |
+  "MEDIUM" |
+  "HIGH" |
+  "CRITICAL";
 ```
-
----
-
-## **4.3.3 PolicyConstraint**
-
-Constraints restrict how execution may occur after an ALLOW or PARTIAL_ALLOW decision.
-
+## **4.3 PolicyConstraint**
 ```
 interface PolicyConstraint {
   code: string;
-  // machine-readable key, e.g. "RESULTS_READONLY"
-
   scope: "request" | "session" | "action" | "output";
-
   args?: object;
-  // free-structure configuration
-
   reason?: string;
-  // optional human-readable justification
 }
 ```
 
-**Notes**
-
-- Constraints MUST NOT be silently ignored by executors.
-- Violating constraints SHOULD produce a DENY error at runtime.
-
----
-
-## **4.3.4 PolicyContext**
-
+## **4.4 PolicyContext**
 ```
 interface PolicyContext {
   tenant?: string;
@@ -181,26 +168,14 @@ interface PolicyContext {
   data_sensitivity?:
     "public" | "internal" | "restricted" | "health" | "classified";
 
-  request_purpose?: string; // e.g. "clinical_support"
-
+  request_purpose?: string;
   claims?: PolicyClaim[];
-  // informational signals to the policy engine
 
   attributes?: Record<string, string | number | boolean>;
 }
 ```
 
-Policy context enables dynamic evaluation:
-
-- per-case
-- per-session
-- per-user
-- per-domain
-
----
-
-## **4.3.5 PolicyClaim**
-
+## **4.5 PolicyClaim**
 ```
 interface PolicyClaim {
   message: string;
@@ -208,38 +183,38 @@ interface PolicyClaim {
 }
 ```
 
-Claims communicate non-binding machine reasoning outcomes.
+# **5 HITL Envelope Types**
 
-They are NOT equivalent to result or explanation.
+  
 
----
+Human governance envelopes exist only if HITL enforcement is implemented.
+## **5.1 hitl.request**
 
-# **4.4 HITL (Human Governance) Model Types**
+  
 
-Human governance enables dual-control and accountability.
+### **Envelope Type**
 
----
+  
 
-## **4.4.1 HITL Request Envelope**
-
-Envelope Type: hitl.request
-
+hitl.request
 ```
 interface HitlRequestParams {
   reason: string;
   required_role: string;
   payload: object;
   proposed_action: string;
-  risk: RiskLevel;
+  risk?: RiskLevel;
 }
 ```
+## **5.2 hitl.decision.submit**
 
----
+  
 
-## **4.4.2 HITL Decision Envelope**
+### **Envelope Type**
 
-Envelope Type: hitl.decision.submit
+  
 
+hitl.decision.submit
 ```
 interface HitlDecisionParams {
   approve: boolean;
@@ -248,32 +223,11 @@ interface HitlDecisionParams {
   override_reason?: string;
 }
 ```
+# **6 Governance Error Payload**
 
----
+  
 
-# **4.5 Policy Explanation Types**
-
-Used by policy.explain.
-
-```
-interface PolicyExplainParams {
-  policy_binding_id: string;
-}
-
-interface PolicyExplainResult {
-  explanation: string;
-  rules_fired?: string[];
-  constraints?: PolicyConstraint[];
-  evidence?: object;
-}
-```
-
----
-
-# **4.6 Default Governance Error Types**
-
-Governance-related errors extend the common error model but add structured semantics.
-
+Governance envelopes MAY return structured error bodies.
 ```
 interface GovernanceError extends OrchError {
   decision?: PolicyDecision;
@@ -282,46 +236,10 @@ interface GovernanceError extends OrchError {
   hitl_required?: boolean;
 }
 ```
-
----
-
-# **4.7 Execution-Time Governance Validation Result**
-
-Used by exec.invoke responses when runtime constraint enforcement applies:
-
-```
-interface ExecutionGovernanceState {
-  policy_binding_id: string;
-  allowed_actions: string[];
-  removed_actions?: string[];
-  requires_hitl_for?: string[];
-}
-```
-
----
-
-# **4.8 Required Governance Rules (Summary)**
-
-All orchestrated requests MUST:
-
-1. Pass through policy evaluation before execution.
-2. Attach policy-binding and decision metadata to results.
-3. Record decision state into provenance (event hash).
-4. Fail closed: missing policy = DENY state.
-5. Allow constraints to override module free behavior.
-6. Defend HITL boundaries: cannot skip human approval stage.
-
----
-
-# **4.9 Governance Category Design Principles**
-
-These are not code, but define rationale:
-
-- **Governance precedes execution**
-  No action may be invoked before policy evaluation.
-- **Constraints are first-class technical entities**
-  Not documentation, but enforceable machine rules.
-- **HITL is not optional**
-  REQUIRED where indicated by decision logic or risk.
-- **Policy identity must be versioned**
-  All enforcement must be reproducible and traceable.
+# **7 Envelope Summary Table**
+| **Envelope**         | **Purpose**                               |
+| -------------------- | ----------------------------------------- |
+| policy.evaluate      | Request decision result over an operation |
+| policy.explain       | Retrieve human-readable policy reasoning  |
+| hitl.request         | Request human approval                    |
+| hitl.decision.submit | Submit a human approval outcome           |
