@@ -75,6 +75,8 @@ Other endpoints MAY be used, but /orchestrate represents the canonical routing p
 | Orch-Caller     | Identifies caller identity (module or external client) |
 | Orch-Module-Id  | Identifies module sending the request                  |
 | Orch-Session-Id | Identifies a conversation or workflow session          |
+
+
 These are **transport correlation identifiers only.**
 
 The Base Protocol does not prescribe policy, signatures, or cryptographic binding semantics for headers.

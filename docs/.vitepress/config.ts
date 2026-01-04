@@ -51,7 +51,7 @@ export default defineConfig({
                 collapsed: false,
                 items: [{ text: 'Overview', link: '/base/overview' }],
               },
-              { text: 'Architecture', link: '/item-3' },
+              { text: 'Architecture', link: '/architecture' },
               {
                 text: 'Schema Reference',
                 collapsed: false,
